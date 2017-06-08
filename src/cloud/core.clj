@@ -5,8 +5,7 @@
             [clojure.spec.gen.alpha :as gen]
             [clojure.spec.test.alpha :as spectest]
             [clj-http.client :as client]
-            [cheshire.core :as cheshire]
-            )
+            [cheshire.core :as cheshire])
   (:gen-class))
 
 (spec/def ::cloud-endpoint (comp not nil? (partial re-find #"^https://([a-z0-9-]+\.)+oraclecloud.com/$")))
@@ -78,6 +77,7 @@
 (defn- storage-auth-url [domain] (str "https://" domain ".storage.oraclecloud.com/auth/v1.0"))
 (spec/fdef storage-url :args (spec/cat :domain ::domain))
 (defn storage-authenticate [domain user password]
+  (println "storage-authenticate: getting token for " domain user)
   (-> (client/get (storage-auth-url domain)
                   {:headers {"X-Storage-User" (str "Storage-" domain ":" user) "X-Storage-Pass" password}})
       :headers
@@ -110,7 +110,14 @@
   ;; then upload each chunk, retrieving the etags header
   ;; then construct the manifest.json
   ;; and construct the final object by uploading the manifest
-  (let [headers #(storage-authenticate domain username password)
+  (let [last (atom (.getTime (new java.util.Date)))
+        last-headers (atom (storage-authenticate domain username password))
+        headers #(let [now (.getTime (new java.util.Date))]
+                   (when (< (* 20 60 1000) (- now @last))
+                     (do
+                       (reset! last-headers (storage-authenticate domain username password))
+                       (reset! last now)))
+                   @last-headers)
         name (.getName (io/file imagepath))
         chunks (split-file imagepath tmpdir)]
     (->> chunks
@@ -142,4 +149,4 @@
     (compute-create-machine-image compute-endpoint domain user password file-name)
     (compute-create-image-list compute-endpoint domain user password image-name image-description file-name)
     ))
-(comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7.tar.gz" "/home/thach/tmp" "test-full-cycle" "everything from api"))
+(comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7-2.tar.gz" "/home/thach/tmp" "test-full-cycle" "everything from api"))
