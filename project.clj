@@ -10,4 +10,5 @@
                  [cheshire "5.7.1"]
                  ]
 
-  :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]]}})
+  :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]]}}
+  :main cloud.core)
