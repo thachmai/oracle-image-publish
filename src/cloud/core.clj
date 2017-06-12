@@ -49,9 +49,9 @@
               :file file-name
               :sizes {:total 0}}
         body-str (cheshire/generate-string body)]
-    (println "compute-create-machine-image: PUT body ->" body-str)
+    (println "compute-create-machine-image: POST body ->" body-str)
     (let [response (client/post (str endpoint "machineimage/") {:accept compute-content-json :body body-str :cookie-store cs :throw-exceptions false})]
-      (println "COMPUTE machineimage/ reponse status: " (:status response))
+      (println "compute-create-machine-image: HTTP STATUS" (:status response))
       response)))
 (comment (compute-create-machine-image compute-endpoint t-domain t-user t-password "win2016.tar.gz"))
 
@@ -91,7 +91,7 @@
   (println "storage-create-object: creating " object-path " from " file-path)
   (let [request (client/put (storage-url domain "/" object-path)
                             {:headers headers :body (io/input-stream file-path)})]
-    (println "storage-create-object: http status for " object-path (:status request))
+    (println "storage-create-object: HTTP STATUS" object-path (:status request))
     request))
 
 (defn- split-file [file-path tmp-dir]
