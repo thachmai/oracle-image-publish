@@ -82,7 +82,7 @@
                   {:headers {"X-Storage-User" (str "Storage-" domain ":" user) "X-Storage-Pass" password}})
       :headers
       (select-keys ["X-Auth-Token"])))
-(comment (storage-authenticate "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01"))
+(comment (def h (storage-authenticate "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01")))
 
 (defn- storage-create-container [headers domain container-name]
   (client/put (storage-url domain "/" container-name) {:headers headers}))
@@ -93,6 +93,17 @@
                             {:headers headers :body (io/input-stream file-path)})]
     (println "storage-create-object: HTTP STATUS" object-path (:status request))
     request))
+
+(defn storage-empty-container [headers domain container-name]
+  (->> (client/get (storage-url domain "/" container-name) {:headers headers})
+       :body
+       clojure.string/split-lines
+       (map #(client/delete (storage-url domain "/" container-name "/" %) {:headers headers}))
+       ))
+(comment (storage-empty-container h t-domain "ChunckYann")
+         (storage-empty-container h t-domain "ImageYann")
+         (storage-empty-container h t-domain "compute_images_segments")
+         (def deletes (storage-empty-container h t-domain "uforge_segments")))
 
 (defn- split-file [file-path tmp-dir]
   (let [name (.getName (io/file file-path))
@@ -149,4 +160,75 @@
     (compute-create-machine-image compute-endpoint domain user password file-name)
     (compute-create-image-list compute-endpoint domain user password image-name image-description file-name)
     ))
-(comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7-2.tar.gz" "/home/thach/tmp" "test-full-cycle" "everything from api"))
+(comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7-2.tar.gz" "/home/thach/tmp" "test-full-cycle" "everything from api")
+         (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/home/thach/Downloads/tmp/win2012.tar.gz" "/home/thach/tmp" "uforgewin" "everything from api"))
+
+;; === master log ===
+(def log (slurp "/home/thach/UShareSoft/WKS/master-log"))
+(->> log
+     clojure.string/split-lines
+     )
+
+
+
+;; === code kata ===
+
+(defn single-score [score]
+  (case score
+    0 "love"
+    1 "fifteen"
+    2 "thirty"
+    3 "fourty"
+    4 "adv"
+    "error"
+    ))
+(comment
+  (single-score 0)
+  (single-score 1)
+  (single-score 2)
+  (single-score 3)
+  (single-score 4)
+  (single-score 5)
+  )
+
+(defn score [playerA a-score playerB b-score]
+  "display the score for any game"
+  (let [diffab (- a-score b-score)
+        min-score (min a-score b-score)
+        max-score (max a-score b-score)
+        adjust-delta (if (> max-score 4)
+                       (- max-score 4)
+                       0)
+        adjusted-a (- a-score adjust-delta)
+        adjusted-b (- b-score adjust-delta)
+        ]
+    ;(println adjust-delta (Math/abs diffab))
+    (print playerA a-score "-" playerB b-score "====> ")
+    (if (and (>= (Math/abs diffab) 2) (>= max-score 4))
+      (println (if (> a-score b-score) playerA playerB) "WIN!")
+      (println playerA (single-score adjusted-a) "-" playerB (single-score adjusted-b))
+      )
+    ))
+
+(comment
+  (score "Nadal" 0 "Federrer" 0)
+  (score "Nadal" 1 "Federrer" 0)
+  (score "Nadal" 2 "Federrer" 0)
+  (score "Nadal" 3 "Federrer" 0)
+  (score "Nadal" 4 "Federrer" 0)
+  (score "Nadal" 5 "Federrer" 0) ; error
+  (score "Nadal" 0 "Federrer" 1)
+  (score "Nadal" 0 "Federrer" 2)
+  (score "Nadal" 0 "Federrer" 3)
+  (score "Nadal" 0 "Federrer" 4)
+  (score "Nadal" 0 "Federrer" 5) ; error
+  (score "Nadal" 1 "Federrer" 1)
+  (score "Nadal" 2 "Federrer" 2)
+  (score "Nadal" 3 "Federrer" 3)
+  (score "Nadal" 4 "Federrer" 4)
+  (score "Nadal" 3 "Federrer" 2)
+  (score "Nadal" 2 "Federrer" 4)
+  (score "Nadal" 10 "Federrer" 11)
+  (score "Nadal" 10 "Federrer" 12)
+  (score "Nadal" 110 "Federrer" 109)
+  )
