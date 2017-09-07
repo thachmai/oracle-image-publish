@@ -32,12 +32,43 @@
     (client/post (str endpoint "/authenticate/")
                  {:content-type compute-content-json
                   :cookie-store cs
-                  :body (cheshire/generate-string {:user (str "/Compute-" domain "/" user) :password password})})
+                  :body (cheshire/generate-string {:user (str "/Compute-" domain "/" user) :password password})} )
     cs))
 (spec/fdef compute-authenticate
            :args ::authenticate-args
            :ret #(instance? org.apache.http.impl.client.BasicCookieStore %))
-(comment (compute-authenticate compute-endpoint "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01"))
+(comment
+  (compute-authenticate compute-endpoint t-domain t-user t-password)
+  (def t-cs (compute-authenticate compute-endpoint t-domain t-user t-password))
+  )
+
+(defn hack-auth [domain user password]
+  (let [cs (clj-http.cookies/cookie-store)
+        formdata {:username user
+                  :userid user
+                  :password password
+                  :tenantName domain
+                  :tenantDisplayName domain
+                  }
+        f2 "username=ORACLECLOUD%40USHARESOFT.COM&password=%21USSOraUForge01&userid=ORACLECLOUD%40USHARESOFT.COM&request_id=-720858685962184372&error_code=null&buttonAction=local&oam_mt=true&ovm=null&cloud=null&forgotPasswordUrl=https%3A%2F%2Flogin.em2.oraclecloud.com%3A443%2Fidentity%2Ffaces%2Fforgotpassword%3FbackUrl%3Dhttps%253A%252F%252Fcomputeui.emea.oraclecloud.com%252Fmycompute%252Fconsole%252Fview.html%253Fpage%253Dinstances%2526tab%253Dinstances%26checksum%3DBD3B664E7DDFC6AD95696A91A09058A36F05D42A7F53E7AE5A8F7C63DA8D76B3&registrationUrl=https%3A%2F%2Flogin.em2.oraclecloud.com%3A443%2Fidentity%2Ffaces%2Fregister%3FbackUrl%3Dhttps%253A%252F%252Fcomputeui.emea.oraclecloud.com%252Fmycompute%252Fconsole%252Fview.html%253Fpage%253Dinstances%2526tab%253Dinstances%26checksum%3DBD3B664E7DDFC6AD95696A91A09058A36F05D42A7F53E7AE5A8F7C63DA8D76B3&trackRegistrationUrl=https%3A%2F%2Flogin.em2.oraclecloud.com%3A443%2Fidentity%2Ffaces%2Ftrackregistration%3FbackUrl%3Dhttps%253A%252F%252Fcomputeui.emea.oraclecloud.com%252Fmycompute%252Fconsole%252Fview.html%253Fpage%253Dinstances%2526tab%253Dinstances%26checksum%3DBD3B664E7DDFC6AD95696A91A09058A36F05D42A7F53E7AE5A8F7C63DA8D76B3&tenantDisplayName=a491487&tenantName=a491487&troubleShootFlow=null"
+        ]
+    (println "Form data:" (cheshire/generate-string formdata))
+    (-> (client/post "https://login.em2.oraclecloud.com/oam/server/auth_cred_submit"
+                     {:content-type compute-content-json
+                      :cookie-store cs
+                      :debug true
+                      :body f2 }) ;(cheshire/generate-string formdata)})
+        ;:headers
+        (#(print %1))
+        )
+    cs))
+
+(comment
+  "zone experiment"
+  (def t-cs (hack-auth t-domain t-user t-password))
+  (client/get "https://computeui.emea.oraclecloud.com/mycompute/rest/context/zonesStats" {:cookie-store t-cs})
+  (client/get "https://computeui.emea.oraclecloud.com/mycompute/rest/context/pageContext" {:cookie-store t-cs})
+  )
 
 (defn compute-create-machine-image [endpoint domain user password file-name]
   "Creates an machine image from a storage object. The storage object must be a raw disk compressed as .tar.gz
@@ -162,73 +193,3 @@
     ))
 (comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7-2.tar.gz" "/home/thach/tmp" "test-full-cycle" "everything from api")
          (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/home/thach/Downloads/tmp/win2012.tar.gz" "/home/thach/tmp" "uforgewin" "everything from api"))
-
-;; === master log ===
-(def log (slurp "/home/thach/UShareSoft/WKS/master-log"))
-(->> log
-     clojure.string/split-lines
-     )
-
-
-
-;; === code kata ===
-
-(defn single-score [score]
-  (case score
-    0 "love"
-    1 "fifteen"
-    2 "thirty"
-    3 "fourty"
-    4 "adv"
-    "error"
-    ))
-(comment
-  (single-score 0)
-  (single-score 1)
-  (single-score 2)
-  (single-score 3)
-  (single-score 4)
-  (single-score 5)
-  )
-
-(defn score [playerA a-score playerB b-score]
-  "display the score for any game"
-  (let [diffab (- a-score b-score)
-        min-score (min a-score b-score)
-        max-score (max a-score b-score)
-        adjust-delta (if (> max-score 4)
-                       (- max-score 4)
-                       0)
-        adjusted-a (- a-score adjust-delta)
-        adjusted-b (- b-score adjust-delta)
-        ]
-    ;(println adjust-delta (Math/abs diffab))
-    (print playerA a-score "-" playerB b-score "====> ")
-    (if (and (>= (Math/abs diffab) 2) (>= max-score 4))
-      (println (if (> a-score b-score) playerA playerB) "WIN!")
-      (println playerA (single-score adjusted-a) "-" playerB (single-score adjusted-b))
-      )
-    ))
-
-(comment
-  (score "Nadal" 0 "Federrer" 0)
-  (score "Nadal" 1 "Federrer" 0)
-  (score "Nadal" 2 "Federrer" 0)
-  (score "Nadal" 3 "Federrer" 0)
-  (score "Nadal" 4 "Federrer" 0)
-  (score "Nadal" 5 "Federrer" 0) ; error
-  (score "Nadal" 0 "Federrer" 1)
-  (score "Nadal" 0 "Federrer" 2)
-  (score "Nadal" 0 "Federrer" 3)
-  (score "Nadal" 0 "Federrer" 4)
-  (score "Nadal" 0 "Federrer" 5) ; error
-  (score "Nadal" 1 "Federrer" 1)
-  (score "Nadal" 2 "Federrer" 2)
-  (score "Nadal" 3 "Federrer" 3)
-  (score "Nadal" 4 "Federrer" 4)
-  (score "Nadal" 3 "Federrer" 2)
-  (score "Nadal" 2 "Federrer" 4)
-  (score "Nadal" 10 "Federrer" 11)
-  (score "Nadal" 10 "Federrer" 12)
-  (score "Nadal" 110 "Federrer" 109)
-  )
