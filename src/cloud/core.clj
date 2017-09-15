@@ -134,13 +134,14 @@
 (comment (storage-empty-container h t-domain "ChunckYann")
          (storage-empty-container h t-domain "ImageYann")
          (storage-empty-container h t-domain "compute_images_segments")
+         (storage-empty-container h t-domain "compute_images")
          (def deletes (storage-empty-container h t-domain "uforge_segments")))
 
 (defn- split-file [file-path tmp-dir]
   (let [name (.getName (io/file file-path))
         split-dest (str tmp-dir "/" name "_segment_")]
     (println "split-file: " file-path " using tmp " tmp-dir)
-    (shell/sh "split" "-b 200m" file-path split-dest)
+    (shell/sh "split" "-b 20m" file-path split-dest)
     (->> (.list (io/file tmp-dir))
          (filter #(.startsWith % (str name "_segment_")))
          (map #(str tmp-dir "/" %))
@@ -166,6 +167,7 @@
          (map #(let [file (io/file %)
                      object-name (.getName file)
                      object-path (str storage-segment-container "/" object-name)]
+                 (println "mapping chunk " object-path)
                  {:path object-path
                   :size_bytes (.length file)
                   :etag (-> (storage-create-object (headers) domain object-path %)
@@ -173,8 +175,12 @@
                             (get "Etag"))}))
          (sort-by :path)
          cheshire/generate-string
-         (#(client/put (storage-url domain "/" storage-image-container "/" name "?multipart-manifest=put")
-                     {:headers (headers) :body %}))
+         ;(#(client/put (storage-url domain "/" storage-image-container "/" name "?multipart-manifest=put")
+         ;            {:headers (headers) :body %}))
+         ; dynamic upload
+         (#(client/put (storage-url domain "/" storage-image-container "/" name)
+                       {:headers (merge (headers)
+                                        {"X-Object-Manifest" (str storage-segment-container "/" name)})}))
          )))
 (comment (storage-upload-image "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7.raw.tar.gz" "/home/thach/tmp")
          (storage-upload-image "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/win2016.tar.gz" "/home/thach/tmp"))
@@ -191,5 +197,6 @@
     (compute-create-machine-image compute-endpoint domain user password file-name)
     (compute-create-image-list compute-endpoint domain user password image-name image-description file-name)
     ))
-(comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7-2.tar.gz" "/home/thach/tmp" "test-full-cycle" "everything from api")
+(comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/thach-win3.tar.gz" "/home/thach/tmp" "thach-win3" "everything from api")
+         (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/home/thach/Downloads/tmp/thach-2016-1.tar.gz" "/home/thach/tmp" "thach-2016-1" "dynamic upload"))
          (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/home/thach/Downloads/tmp/win2012.tar.gz" "/home/thach/tmp" "uforgewin" "everything from api"))
