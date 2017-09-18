@@ -42,34 +42,6 @@
   (def t-cs (compute-authenticate compute-endpoint t-domain t-user t-password))
   )
 
-(defn hack-auth [domain user password]
-  (let [cs (clj-http.cookies/cookie-store)
-        formdata {:username user
-                  :userid user
-                  :password password
-                  :tenantName domain
-                  :tenantDisplayName domain
-                  }
-        f2 "username=ORACLECLOUD%40USHARESOFT.COM&password=%21USSOraUForge01&userid=ORACLECLOUD%40USHARESOFT.COM&request_id=-720858685962184372&error_code=null&buttonAction=local&oam_mt=true&ovm=null&cloud=null&forgotPasswordUrl=https%3A%2F%2Flogin.em2.oraclecloud.com%3A443%2Fidentity%2Ffaces%2Fforgotpassword%3FbackUrl%3Dhttps%253A%252F%252Fcomputeui.emea.oraclecloud.com%252Fmycompute%252Fconsole%252Fview.html%253Fpage%253Dinstances%2526tab%253Dinstances%26checksum%3DBD3B664E7DDFC6AD95696A91A09058A36F05D42A7F53E7AE5A8F7C63DA8D76B3&registrationUrl=https%3A%2F%2Flogin.em2.oraclecloud.com%3A443%2Fidentity%2Ffaces%2Fregister%3FbackUrl%3Dhttps%253A%252F%252Fcomputeui.emea.oraclecloud.com%252Fmycompute%252Fconsole%252Fview.html%253Fpage%253Dinstances%2526tab%253Dinstances%26checksum%3DBD3B664E7DDFC6AD95696A91A09058A36F05D42A7F53E7AE5A8F7C63DA8D76B3&trackRegistrationUrl=https%3A%2F%2Flogin.em2.oraclecloud.com%3A443%2Fidentity%2Ffaces%2Ftrackregistration%3FbackUrl%3Dhttps%253A%252F%252Fcomputeui.emea.oraclecloud.com%252Fmycompute%252Fconsole%252Fview.html%253Fpage%253Dinstances%2526tab%253Dinstances%26checksum%3DBD3B664E7DDFC6AD95696A91A09058A36F05D42A7F53E7AE5A8F7C63DA8D76B3&tenantDisplayName=a491487&tenantName=a491487&troubleShootFlow=null"
-        ]
-    (println "Form data:" (cheshire/generate-string formdata))
-    (-> (client/post "https://login.em2.oraclecloud.com/oam/server/auth_cred_submit"
-                     {:content-type compute-content-json
-                      :cookie-store cs
-                      :debug true
-                      :body f2 }) ;(cheshire/generate-string formdata)})
-        ;:headers
-        (#(print %1))
-        )
-    cs))
-
-(comment
-  "zone experiment"
-  (def t-cs (hack-auth t-domain t-user t-password))
-  (client/get "https://computeui.emea.oraclecloud.com/mycompute/rest/context/zonesStats" {:cookie-store t-cs})
-  (client/get "https://computeui.emea.oraclecloud.com/mycompute/rest/context/pageContext" {:cookie-store t-cs})
-  )
-
 (defn compute-create-machine-image [endpoint domain user password file-name]
   "Creates an machine image from a storage object. The storage object must be a raw disk compressed as .tar.gz
    Returns the machine-image name (typically the same as the file-name)"
@@ -125,18 +97,6 @@
     (println "storage-create-object: HTTP STATUS" object-path (:status request))
     request))
 
-(defn storage-empty-container [headers domain container-name]
-  (->> (client/get (storage-url domain "/" container-name) {:headers headers})
-       :body
-       clojure.string/split-lines
-       (map #(client/delete (storage-url domain "/" container-name "/" %) {:headers headers}))
-       ))
-(comment (storage-empty-container h t-domain "ChunckYann")
-         (storage-empty-container h t-domain "ImageYann")
-         (storage-empty-container h t-domain "compute_images_segments")
-         (storage-empty-container h t-domain "compute_images")
-         (def deletes (storage-empty-container h t-domain "uforge_segments")))
-
 (defn- split-file [file-path tmp-dir]
   (let [name (.getName (io/file file-path))
         split-dest (str tmp-dir "/" name "_segment_")]
@@ -146,6 +106,14 @@
          (filter #(.startsWith % (str name "_segment_")))
          (map #(str tmp-dir "/" %))
          )))
+
+(defn- storage-throttle-auth-headers [domain user password throttle]
+  (let [now (.getTime (new java.util.Date))]
+    (if (nil? @throttle)
+      (reset! throttle {:time now :headers (storage-authenticate domain user password)})
+      (when (< (* 20 60 1000) (- now (:time @throttle)))
+        (reset! throttle {:time now :headers (storage-authenticate domain user password)}))))
+  (:headers @throttle))
 
 (defn storage-upload-image [domain username password imagepath tmpdir]
   ;; start by getting the authentication header for all subsequent request
@@ -185,6 +153,40 @@
 (comment (storage-upload-image "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/centos7.raw.tar.gz" "/home/thach/tmp")
          (storage-upload-image "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/win2016.tar.gz" "/home/thach/tmp"))
 
+(defn storage-download [domain user password objects files]
+  (let [os (if (string? objects) [objects] objects)
+        fs (if (string? files) [files] files)
+        throttle (atom nil)]
+    (when (not= (count os) (count fs)) (new Exception "objects and files must be symetric"))
+    (doseq [i (range (count os))]
+      (println "downloading" (nth os i) "to" (nth fs i))
+      (clojure.java.io/copy
+       (:body (client/get (storage-url domain "/" (nth os i))
+                          {:as :stream
+                           :headers (storage-throttle-auth-headers domain user password throttle)}))
+       (java.io.File. (nth fs i))))))
+
+(defn storage-get-container [h domain container]
+  (println "storage-get-container " container)
+  (let [body (:body (client/get (storage-url domain "/" container) {:headers h}))]
+    (if (nil? body) [] (clojure.string/split-lines body))))
+
+(defn storage-empty-container
+  ([headers domain container predicate]
+   (doseq [container-file (storage-get-container headers domain container)]
+     (when (predicate container-file)
+       (println "Deleting " container "/" container-file "...")
+       (client/delete (storage-url domain "/" container "/" container-file) {:headers headers}))))
+
+  ([headers domain container]
+   (storage-empty-container headers domain container (constantly true))))
+
+(comment (storage-empty-container h t-domain "ChunckYann")
+         (storage-empty-container h t-domain "ImageYann")
+         (storage-empty-container h t-domain "compute_images_segments")
+         (storage-empty-container h t-domain "compute_images")
+         (def deletes (storage-empty-container h t-domain "uforge_segments")))
+
 ;; ==================== fusion ==================
 (defn -main
   [compute-endpoint domain user password image-path tmp-dir image-name image-description]
@@ -198,5 +200,5 @@
     (compute-create-image-list compute-endpoint domain user password image-name image-description file-name)
     ))
 (comment (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/data/Downloads/tmp/thach-win3.tar.gz" "/home/thach/tmp" "thach-win3" "everything from api")
-         (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/home/thach/Downloads/tmp/thach-2016-1.tar.gz" "/home/thach/tmp" "thach-2016-1" "dynamic upload"))
+         (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/home/thach/Downloads/tmp/thach-2016-1.tar.gz" "/home/thach/tmp" "thach-2016-1" "dynamic upload")
          (-main "https://compute.gbcom-south-1.oraclecloud.com/" "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01" "/home/thach/Downloads/tmp/win2012.tar.gz" "/home/thach/tmp" "uforgewin" "everything from api"))
