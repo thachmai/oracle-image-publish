@@ -73,6 +73,19 @@
     (client/post (str endpoint "imagelist/Compute-" domain "/" user "/" image-list-name "/entry/") {:accept compute-content-json :body entry-body-str :cookie-store cs})))
 (comment (compute-create-image-list compute-endpoint t-domain t-user t-password "thach-test-image-list" "testing image list" "win2016.tar.gz"))
 
+;; the compute instances are still in the "classic" orchestration
+(defn compute-orc-get [cs endpoint domain user]
+  (-> (client/get (str endpoint "orchestration/Compute-" domain "/" user "/")
+              {:content-type compute-content-json :accept compute-content-directory
+               :cookie-store cs})
+      :body
+      (cheshire/parse-string true)
+      :result
+      ))
+(comment
+  (compute-orc-get t-cs compute-endpoint t-domain t-user)
+  )
+
 ;; ==================== storage ==================
 (def storage-image-container "compute_images")
 (def storage-segment-container "uforge_segments")
