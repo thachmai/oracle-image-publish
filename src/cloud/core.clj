@@ -20,7 +20,7 @@
 (def compute-endpoint "https://compute.gbcom-south-1.oraclecloud.com/")
 (def t-domain "a491487")
 (def t-user "oraclecloud@usharesoft.com")
-(def t-password "!USSOraUForge01")
+(def t-password "!USSOraUForge02")
 
 ;; ==================== compute ==================
 (def compute-content-json "application/oracle-compute-v3+json")
@@ -74,7 +74,8 @@
 (comment (compute-create-image-list compute-endpoint t-domain t-user t-password "thach-test-image-list" "testing image list" "win2016.tar.gz"))
 
 ;; the compute instances are still in the "classic" orchestration
-(defn compute-orc-get [cs endpoint domain user]
+(defn compute-orc-list [cs endpoint domain user]
+  (println "compute-orc-list: retrieving for " user)
   (-> (client/get (str endpoint "orchestration/Compute-" domain "/" user "/")
               {:content-type compute-content-json :accept compute-content-directory
                :cookie-store cs})
@@ -83,7 +84,59 @@
       :result
       ))
 (comment
-  (compute-orc-get t-cs compute-endpoint t-domain t-user)
+  (compute-orc-list t-cs compute-endpoint t-domain t-user)
+  )
+
+(defn compute-orc-get [cs endpoint orc]
+  (println "compute-orc-get: status for" orc)
+  (-> (client/get (str endpoint "orchestration" orc)
+                  {:accept compute-content-json :cookie-store cs})
+      :body
+      (cheshire/parse-string true)
+  ))
+(comment
+  (compute-orc-get t-cs compute-endpoint "/Compute-a491487/oraclecloud@usharesoft.com/thach-dup-1_20170919134748_master")
+  )
+
+(defn- -compute-orc-put [cs endpoint orc action]
+  (println "-compute-orc-put" orc action)
+  (client/put (str endpoint "orchestration" orc "?action=" action)
+              {:accept compute-content-json :content-type compute-content-json
+               :cookie-store cs}))
+(defn compute-orc-stop [cs endpoint orc] (-compute-orc-put cs endpoint orc "STOP"))
+(defn compute-orc-start [cs endpoint orc] (-compute-orc-put cs endpoint orc "START"))
+(defn compute-orc-delete [cs endpoint orc]
+  (println "compute-orc-delete" orc)
+  (client/delete (str endpoint "orchestration" orc) {:cookie-store cs}))
+
+;; predicate gets passed the name of the orchestration and must return true to delete it
+(defn compute-orc-clean [endpoint domain user password predicate]
+  (let [cs (compute-authenticate endpoint domain user password)
+        extract-orc (fn [orc-name] (nth (re-find #"(/[^/]+$)" orc-name) 1))]
+    (loop [orcs (filter predicate (compute-orc-list cs endpoint domain user))]
+      (let [orc-details (map (partial compute-orc-get cs endpoint) orcs)
+            ready (filter #(= "ready" (:status %)) orc-details)
+            stoppings (filter #(= "stopping" (:status %)) orc-details)
+            stoppeds (filter #(= "stopped" (:status %)) orc-details)]
+        (println (map #(select-keys % [:name :status]) orc-details))
+        (when (not-empty ready)
+          (do
+            (println "Stopping orchestrations:" (map :name ready))
+            (doseq [r ready]
+              (compute-orc-stop cs endpoint (:name r)))))
+        (when (not-empty stoppeds)
+          (do
+            (println "Deleting orchestrations:" (map :name stoppeds))
+            (doseq [s stoppeds]
+              (compute-orc-delete cs endpoint (:name s)))))
+        (when (not-empty orc-details)
+          (do
+            (println "zzz for 60 seconds")
+            (Thread/sleep 60000)
+            (recur (filter predicate (compute-orc-list cs endpoint domain user)))))
+      ))))
+(comment
+  (compute-orc-clean compute-endpoint t-domain t-user t-password #(.contains % "thach"))
   )
 
 ;; ==================== storage ==================
