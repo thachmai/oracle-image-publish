@@ -137,6 +137,7 @@
       ))))
 (comment
   (compute-orc-clean compute-endpoint t-domain t-user t-password #(.contains % "thach"))
+  (compute-orc-clean compute-endpoint t-domain t-user t-password (constantly true))
   )
 
 ;; ==================== storage ==================
@@ -151,7 +152,7 @@
                   {:headers {"X-Storage-User" (str "Storage-" domain ":" user) "X-Storage-Pass" password}})
       :headers
       (select-keys ["X-Auth-Token"])))
-(comment (def h (storage-authenticate "a491487" "oraclecloud@usharesoft.com" "!USSOraUForge01")))
+(comment (def h (storage-authenticate t-domain t-user t-password)))
 
 (defn- storage-create-container [headers domain container-name]
   (client/put (storage-url domain "/" container-name) {:headers headers}))
@@ -251,6 +252,7 @@
          (storage-empty-container h t-domain "ImageYann")
          (storage-empty-container h t-domain "compute_images_segments")
          (storage-empty-container h t-domain "compute_images")
+         (storage-empty-container (storage-authenticate t-domain t-user t-password) t-domain "compute_images")
          (def deletes (storage-empty-container h t-domain "uforge_segments")))
 
 ;; ==================== fusion ==================
