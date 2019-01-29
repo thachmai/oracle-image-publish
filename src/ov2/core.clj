@@ -14,13 +14,8 @@
   (:import (java.security Key))
   (:import (java.security PrivateKey))
   (:import (java.text.SimpleDateFormat))
-
   (:gen-class))
 
-(def ^:private private-key (slurp "/home/thach/Downloads/ov2/oci_api_key.pem"))
-
-#_(def ^:private date-format (-> (java.text.SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss zzz" java.util.Locale/US)
-                               (.setTimeZone (java.util.TimeZone/getTimeZone "GMT"))))
 (def ^:private date-format (doto (java.text.SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss zzz")
                              (.setTimeZone (java.util.TimeZone/getTimeZone "GMT"))
                              ))
@@ -47,10 +42,18 @@
 (defn- key-id [tenant-id user-id fingerprint]
   (str tenant-id \/ user-id \/ fingerprint))
 
-(defn ora-get [url tenant-id user-id fingerprint compartement-id namespace]
-  (let [key (key-id tenant-id user-id fingerprint)
+(defn- publish-info [tenant-id user-id fingerprint private-key]
+  {:key-id (key-id tenant-id user-id fingerprint)
+   :tenant-id tenant-id
+   :user-id user-id
+   :fingerprint fingerprint
+   :private-key private-key
+   })
+
+(defn- ora-get [url publish]
+  (let [key (key-id (:tenant-id publish) (:user-id publish) (:fingerprint publish))
         signature (Signature. key "rsa-sha256" nil ["date" "(request-target)" "host"])
-        private (PEM/readPrivateKey (string->stream private-key))
+        private (PEM/readPrivateKey (string->stream (:private-key publish)))
         signer (Signer. private signature)
         date (.format date-format (java.util.Date.))
         headers {"date" date
@@ -59,15 +62,29 @@
         authorization (-> (.sign signer "get" (path url) headers)
                           (.toString))
         ]
-    (println authorization)
-    (-> (client/get url {:debug true :headers (assoc headers "Authorization" authorization)})
+    (-> (client/get url {:debug false :headers (assoc headers "Authorization" authorization)})
         :body)))
 
-(defn -main []
-  (let [tenant-id "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
-        user-id "ocid1.user.oc1..aaaaaaaaxfimk2hemd2k5flcziablsdfbecayjdzqphuzggprgkfzlvyst2a"
-        fingerprint "db:ea:6a:28:91:ed:39:3a:11:fc:4f:26:f3:c3:05:83"
-        compartment-id "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
-        namespace "oraclecloudnew"
+(defn -main [tenant-id user-id fingerprint private-key home-region]
+  (let [p-info (publish-info tenant-id user-id fingerprint private-key)
+        url-namespace (str "https://objectstorage." home-region ".oraclecloud.com/n/")
+        url-tenant (str "https://identity." home-region ".oraclecloud.com/20160918/tenancies/" tenant-id)
+        tenant-info (cheshire/parse-string (ora-get url-tenant p-info) true)
+        ora-namespace (ora-get url-namespace p-info)
+        url-regions (str "https://identity." home-region ".oraclecloud.com/20160918/regions/")
+        compartment-id (:compartmentId tenant-info)
+        url-compartments (str "https://identity." home-region ".oraclecloud.com/20160918/compartments/?compartmentId=" compartment-id)
+        url-images (str "https://iaas." home-region ".oraclecloud.com/20160918/images?compartmentId=" compartment-id)
         ]
-    (ora-get url tenant-id user-id fingerprint compartement-id namespace)))
+    (println (ora-get url-regions p-info))
+    (println ora-namespace)
+    (println tenant-info)
+    (println (ora-get url-compartments p-info))
+    (println (take 5 (cheshire/parse-string (ora-get url-images p-info))))
+    ))
+
+(-main "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
+       "ocid1.user.oc1..aaaaaaaaxfimk2hemd2k5flcziablsdfbecayjdzqphuzggprgkfzlvyst2a"
+       "db:ea:6a:28:91:ed:39:3a:11:fc:4f:26:f3:c3:05:83"
+       (slurp "/home/thach/Downloads/ov2/oci_api_key.pem")
+       "eu-frankfurt-1")
