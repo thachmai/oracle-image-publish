@@ -13,10 +13,17 @@
   (:import (javax.crypto Mac))
   (:import (java.security Key))
   (:import (java.security PrivateKey))
+  (:import (java.text.SimpleDateFormat))
 
   (:gen-class))
 
 (def ^:private private-key (slurp "/home/thach/Downloads/ov2/oci_api_key.pem"))
+
+#_(def ^:private date-format (-> (java.text.SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss zzz" java.util.Locale/US)
+                               (.setTimeZone (java.util.TimeZone/getTimeZone "GMT"))))
+(def ^:private date-format (doto (java.text.SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss zzz")
+                             (.setTimeZone (java.util.TimeZone/getTimeZone "GMT"))
+                             ))
 
 ;; https://stackoverflow.com/questions/38283891/how-to-wrap-a-string-in-an-input-stream
 (defn- string->stream
@@ -37,22 +44,30 @@
 ;(path "https://iaas.region.oraclecloud.com/20160918/instances?availabilityDomain=123:456")
 ;(path "https://iaas.region.oraclecloud.com/20160918/instances")
 
-(defn ora-get [url key-id date]
-  (let [signature (Signature. key-id "rsa-sha256" nil ["date" "(request-target)" "host"])
+(defn- key-id [tenant-id user-id fingerprint]
+  (str tenant-id \/ user-id \/ fingerprint))
+
+(defn ora-get [url tenant-id user-id fingerprint compartement-id namespace]
+  (let [key (key-id tenant-id user-id fingerprint)
+        signature (Signature. key "rsa-sha256" nil ["date" "(request-target)" "host"])
         private (PEM/readPrivateKey (string->stream private-key))
         signer (Signer. private signature)
+        date (.format date-format (java.util.Date.))
         headers {"date" date
                  "host" (host url)
                  }
+        authorization (-> (.sign signer "get" (path url) headers)
+                          (.toString))
         ]
-    (-> (.sign signer "get" (path url) headers)
-        (.toString)
-        (println))
-    ))
+    (println authorization)
+    (-> (client/get url {:debug true :headers (assoc headers "Authorization" authorization)})
+        :body)))
 
 (defn -main []
-  (let [key-id "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq/ocid1.user.oc1..aaaaaaaaxfimk2hemd2k5flcziablsdfbecayjdzqphuzggprgkfzlvyst2a/db:ea:6a:28:91:ed:39:3a:11:fc:4f:26:f3:c3:05:83"
-         url "https://iaas.eu-frankfurt-1.oraclecloud.com/20160918/instances?availabilityDomain=gDFj%3AEU-FRANKFURT-1-AD-1&compartmentId=ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
-         date "Fri, 25 Jan 2019 15:52:27 GMT"
+  (let [tenant-id "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
+        user-id "ocid1.user.oc1..aaaaaaaaxfimk2hemd2k5flcziablsdfbecayjdzqphuzggprgkfzlvyst2a"
+        fingerprint "db:ea:6a:28:91:ed:39:3a:11:fc:4f:26:f3:c3:05:83"
+        compartment-id "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
+        namespace "oraclecloudnew"
         ]
-    (ora-get url key-id date)))
+    (ora-get url tenant-id user-id fingerprint compartement-id namespace)))
