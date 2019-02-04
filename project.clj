@@ -8,9 +8,8 @@
                  [org.clojure/test.check "0.9.0"]
                  [clj-http "3.6.0"]
                  [cheshire "5.7.1"]
-                 [org.apache.jclouds/jclouds-all "2.0.3"]
                  [org.tomitribe/tomitribe-http-signatures "1.0"]
                  ]
-
+  :aot :all
   :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]]}}
   :main ov2.core)

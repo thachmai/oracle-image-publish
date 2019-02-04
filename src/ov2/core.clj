@@ -14,11 +14,11 @@
   (:import (java.security Key))
   (:import (java.security PrivateKey))
   (:import (java.text.SimpleDateFormat))
+  (:import (java.security.MessageDigest))
   (:gen-class))
 
 (def ^:private date-format (doto (java.text.SimpleDateFormat. "EEE, dd MMM yyyy HH:mm:ss zzz")
-                             (.setTimeZone (java.util.TimeZone/getTimeZone "GMT"))
-                             ))
+                             (.setTimeZone (java.util.TimeZone/getTimeZone "GMT"))))
 
 ;; https://stackoverflow.com/questions/38283891/how-to-wrap-a-string-in-an-input-stream
 (defn- string->stream
@@ -50,9 +50,19 @@
    :private-key private-key
    })
 
+;; not working, should find a way to work with stream instead of byte array
+(defn- body-sha256 [input-stream]
+  (let [digest (java.security.MessageDigest/getInstance "SHA-256")
+       ]
+    (.digest digest input-stream)
+    (println (.digest digest))
+  ))
+;(body-sha256 (.getBytes (slurp "/home/thach/Downloads/ov2/oci_api_key.pem")))
+
+
 (defn- ora-get [url publish]
   (let [key (key-id (:tenant-id publish) (:user-id publish) (:fingerprint publish))
-        signature (Signature. key "rsa-sha256" nil ["date" "(request-target)" "host"])
+        signature (Signature. key "rsa-sha256" nil ["(request-target)" "date" "host"])
         private (PEM/readPrivateKey (string->stream (:private-key publish)))
         signer (Signer. private signature)
         date (.format date-format (java.util.Date.))
@@ -65,8 +75,8 @@
     (-> (client/get url {:debug false :headers (assoc headers "Authorization" authorization)})
         :body)))
 
-(defn -main [tenant-id user-id fingerprint private-key home-region]
-  (let [p-info (publish-info tenant-id user-id fingerprint private-key)
+(defn -main [tenant-id user-id fingerprint private-key-file home-region]
+  (let [p-info (publish-info tenant-id user-id fingerprint (slurp private-key-file))
         url-namespace (str "https://objectstorage." home-region ".oraclecloud.com/n/")
         url-tenant (str "https://identity." home-region ".oraclecloud.com/20160918/tenancies/" tenant-id)
         tenant-info (cheshire/parse-string (ora-get url-tenant p-info) true)
@@ -83,8 +93,8 @@
     (println (take 5 (cheshire/parse-string (ora-get url-images p-info))))
     ))
 
-(-main "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
+#_(-main "ocid1.tenancy.oc1..aaaaaaaaxrooypj3r3gmztrxvplqzq3gwdkfsblpn465m5d7d4pxrp5rzigq"
        "ocid1.user.oc1..aaaaaaaaxfimk2hemd2k5flcziablsdfbecayjdzqphuzggprgkfzlvyst2a"
        "db:ea:6a:28:91:ed:39:3a:11:fc:4f:26:f3:c3:05:83"
-       (slurp "/home/thach/Downloads/ov2/oci_api_key.pem")
+       "/home/thach/Downloads/ov2/oci_api_key.pem"
        "eu-frankfurt-1")
