@@ -12,4 +12,5 @@
                  ]
   :aot :all
   :profiles {:dev {:dependencies [[org.clojure/test.check "0.9.0"]]}}
-  :main ov2.core)
+  :main ov2.core
+  :eval-in-leiningen true)
